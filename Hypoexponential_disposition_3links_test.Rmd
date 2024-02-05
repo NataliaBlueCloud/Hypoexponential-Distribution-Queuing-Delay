@@ -8,15 +8,8 @@ date: "2024-01-24"
 
 ```{r setup, include=FALSE}
 library(igraph)
-library(readxl)
 library(simmer)
-library(ggplot2)
-library(tidyverse)
-#library(SciView)
-library(ggpubr)
-library(cowplot)
-library(hrbrthemes)
-library(EnvStats)
+library(dplyr)
 ```
 
 # Input data
