@@ -18,18 +18,12 @@ This section contains functions for calculating the theoretical and simulated de
 Before running the code, ensure that you have the required R packages installed:
 
 - igraph
-- readxl
 - simmer
-- ggplot2
-- tidyverse
-- ggpubr
-- cowplot
-- hrbrthemes
-- EnvStats
+- dplyr
 
 You can install these packages using the install.packages() function in R.
 ```R
-install.packages(c("igraph", "readxl", "simmer", "ggplot2", "tidyverse", "ggpubr", "cowplot", "hrbrthemes", "EnvStats"))
+install.packages(c("igraph", "simmer", "dplyr"))
 ```
 
 # Results
