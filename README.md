@@ -2,7 +2,7 @@
 This repository contains R Markdown code for simulating and analyzing a system with hypoexponential distribution across three links, as well as functions for calculating delays for a variable number of links (N). The simulation is conducted using the _simmer_ package, and theoretical calculations are performed using _igraph_ and _EnvStats_.
 
 ## Hypoexponential Distribution: 
-In the context of multiple parallel M/M/1 links, the service time distribution is not necessarily exponential anymore. Instead, it follows a hypoexponential distribution, which is a mixture of exponential distributions.
+In the context of multiple links with M/M/1 queuing model, the service time distribution is not necessarily exponential anymore. Instead, it follows a hypoexponential distribution, which is a mixture of exponential distributions.
 
 ## Properties of Hypoexponential Distribution:
 - Mean and Variance: The mean and variance of a hypoexponential distribution can be calculated based on the parameters of the exponential components in the mixture.
