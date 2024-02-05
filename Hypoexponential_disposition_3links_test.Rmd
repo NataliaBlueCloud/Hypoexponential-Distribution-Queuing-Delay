@@ -1,0 +1,325 @@
+---
+title: "Hypoexponential_distribution_3links_test"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-01-24"
+---
+
+```{r setup, include=FALSE}
+library(igraph)
+library(readxl)
+library(simmer)
+library(ggplot2)
+library(tidyverse)
+#library(SciView)
+library(ggpubr)
+library(cowplot)
+library(hrbrthemes)
+library(EnvStats)
+```
+
+# Input data
+
+```{r cars}
+set.seed(123)
+Capacity_Gbps = 10
+Load = c(0.1, 0.4, 0.7)
+N = 1250
+```
+
+# Igraph theoretical calculations
+```{r pressure, echo=FALSE}
+g <- make_graph(edges = c(1, 2, 2, 3, 3, 4), n=4, directed = FALSE)
+E(g)$Definition <- paste0(get.edgelist(g)[,1],"->",get.edgelist(g)[,2])
+E(g)$Capacity_Gbps <- Capacity_Gbps
+E(g)$Capacity <- E(g)$Capacity_Gbps*10^9
+E(g)$Load = Load
+#plot graph
+V(g)$color <- "tomato"
+deg <- degree(g, mode="all")
+V(g)$size <- deg*1
+l <- layout.auto(g)
+plot(g, edge.arrow.size=.3, edge.curved=.5)
+
+```
+
+```{r}
+E_x <- 8*N/(Capacity_Gbps*1e9)
+theor_delay = (E_x*1/(1-Load))
+print(paste("Link1 Kingman theor E(T) = ",  theor_delay[1], "s"))
+print(paste("Link2 Kingman theor E(T) = ",  theor_delay[2], "s"))
+print(paste("Link2 Kingman theor E(T) = ",  theor_delay[3], "s"))
+print(paste("Total Kingman theor E(T) = ",  sum(theor_delay), "s"))
+```
+
+# Simmer simulation
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+env <- simmer("SuperDuperSim") #creating the simmer environment
+
+env %>% add_resource('node_1') %>%#, queue_size = 100) %>%
+  add_resource('node_2') %>%
+  add_resource('node_3') 
+
+traffic_1_4_ <- trajectory() %>%
+  seize("node_1") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_1") %>%
+  seize("node_2") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_2") %>%
+  seize("node_3") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_3")
+
+traffic_2_4_ <- trajectory() %>%
+  seize("node_2") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_2")  
+
+traffic_3_4_ <- trajectory() %>%
+  seize("node_3") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_3")
+
+lambda <- (Capacity_Gbps*1e9)/(8*N)*Load
+
+
+env %>% add_generator("traffic_1_4_", traffic_1_4_, function() rexp(1, lambda[1])) %>%
+  add_generator("traffic_2_4_", traffic_2_4_, function() rexp(1, lambda[2]-lambda[1])) %>%
+  add_generator("traffic_3_4_", traffic_3_4_, function() rexp(1, lambda[3]-lambda[1]))
+
+
+env %>% #env execution
+  run(0.1) 
+
+```
+## Delay results processing for each node
+```{r}
+
+all_arrivals_res <- data.frame(env %>%
+                                 get_mon_arrivals(per_resource = TRUE) %>%
+                                 transform(waiting_time_in_queue = round(end_time - start_time - activity_time)) %>%
+                                 transform(spending_time = end_time - start_time))
+
+for (node in 1:3){
+  traffic <- dplyr::filter(all_arrivals_res, paste0("node_", node) == all_arrivals_res$resource)
+  print(paste("Node - ", node, ":"))
+  print(paste("simmer E(T) =", mean(traffic$spending_time), "s"))
+  
+}
+```
+## Results of simulation e2e delay
+```{r}
+all_arrivals_res <- data.frame(env %>%
+                                 get_mon_arrivals(per_resource = FALSE) %>%
+                                 transform(waiting_time_in_queue = round(end_time - start_time - activity_time)) %>%
+                                 transform(spending_time = end_time - start_time))
+
+traffic <- dplyr::filter(all_arrivals_res, grepl("traffic_1_4_", all_arrivals_res$name))
+print(mean(traffic$spending_time))
+delay_sim_mm1 <- traffic$spending_time
+```
+# Calculations usind Hypoexponential formula
+## Calculate rates 
+```{r}
+
+E(g)$rate = (1 - E(g)$Load)/E_x
+```
+## Calculate C1_3, C2_3, and C3_3
+```{r}
+t = seq(0, 5e-5, 1e-8)
+
+C1_3 = (E(g)$rate[2]/(E(g)$rate[2] - E(g)$rate[1])) * (E(g)$rate[3]/(E(g)$rate[3] - E(g)$rate[1]))
+C2_3 = (E(g)$rate[1]/(E(g)$rate[1] - E(g)$rate[2])) * (E(g)$rate[3]/(E(g)$rate[3] - E(g)$rate[2]))
+C3_3 = (E(g)$rate[1]/(E(g)$rate[1] - E(g)$rate[3])) * (E(g)$rate[2]/(E(g)$rate[2] - E(g)$rate[3]))
+print(C1_3)
+print(C2_3)
+print(C3_3)
+
+```
+## Calculate the individual PDFs for each link
+
+```{r}
+pdf_link1 = E(g)$rate[1] * exp(-E(g)$rate[1] * t)
+pdf_link2 = E(g)$rate[2] * exp(-E(g)$rate[2] * t)
+pdf_link3 = E(g)$rate[3] * exp(-E(g)$rate[3] * t)
+```
+## Calculate the e2e PDF using the corrected rates
+```{r}
+pdf_result = C1_3 * pdf_link1 + C2_3 * pdf_link2 + C3_3 * pdf_link3
+```
+## Plot PDFs 
+```{r}
+plot(t, pdf_link1, type = "l", col = rgb(1, 0, 0, 0.5), lty = 1, lwd = 2,
+     xlab = "Time", ylab = "Probability Density Function",
+     main = "PDF of Links and Simulated Delays", xlim = c(0, 2e-5))
+
+lines(t, pdf_link2, col = rgb(0, 1, 0, 0.5), lty = 2, lwd = 2)
+lines(t, pdf_link3, col = rgb(0, 0, 1, 0.5), lty = 3, lwd = 2)
+
+lines(t, pdf_result, col = rgb(0.5, 0, 0.5, 0.5), lty = 4, lwd = 2)
+
+# Plot histogram of simulated delays with bandwidth and transparency
+hist(delay_sim_mm1, prob = TRUE, col = rgb(1, 0.5, 0, 0.5), add = TRUE, breaks = 30, border = "white")
+
+# Add legends for each component
+legend("topright", legend=c("Link 1", "Link 2", "Link 3", "End-to-End System", "Simulated Delays"),
+       col=c(rgb(1, 0, 0, 0.5), rgb(0, 1, 0, 0.5), rgb(0, 0, 1, 0.5), rgb(0.5, 0, 0.5, 0.5), "orange"),
+       lty=c(1, 2, 3, 4, 1), lwd=c(2, 2, 2, 2, 20), inset = c(0.01, 0.01), xpd = TRUE)
+
+# Reset to a single plot
+par(mfrow=c(1, 1))
+```
+
+# Calculation for n - number of links
+
+```{r}
+
+calculate_C_i_n <- function(rate, i, n) {
+  C_i_n <- 1
+  for (j in 1:n) {
+    if (j != i) {
+      C_i_n <- C_i_n * (rate[j] / (rate[j] - rate[i]))
+    }
+  }
+  return(C_i_n)
+}
+
+calculate_pdf_link <- function(rate, t) {
+  return(rate * exp(-rate * t))
+}
+
+calculate_pdf_result <- function(rate, t, n) {
+  pdf_result <- 0
+  for (i in 1:n) {
+    C_i_n <- calculate_C_i_n(rate, i, n)
+    pdf_result <- pdf_result + C_i_n * calculate_pdf_link(rate[i], t)
+  }
+  return(pdf_result)
+}
+
+```
+## 4 links
+```{r}
+Load = c(0.1, 0.4, 0.7, 0.8)
+```
+
+
+```{r include=FALSE}
+
+env <- simmer("SuperDuperSim") #creating the simmer environment
+
+env %>% add_resource('node_1') %>%#, queue_size = 100) %>%
+  add_resource('node_2') %>%
+  add_resource('node_3') %>%
+  add_resource('node_4')
+
+traffic_1_5_ <- trajectory() %>%
+  seize("node_1") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_1") %>%
+  seize("node_2") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_2") %>%
+  seize("node_3") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_3") %>%
+  seize("node_4") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_4")
+
+traffic_2_3_ <- trajectory() %>%
+  seize("node_2") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_2")  
+
+traffic_3_4_ <- trajectory() %>%
+  seize("node_3") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_3")
+
+traffic_4_5_ <- trajectory() %>%
+  seize("node_4") %>%
+  timeout(function() rexp(1, 1/E_x)) %>%
+  release("node_4")
+
+lambda <- (Capacity_Gbps*1e9)/(8*N)*Load
+
+
+env %>% add_generator("traffic_1_5_", traffic_1_5_, function() rexp(1, lambda[1])) %>%
+  add_generator("traffic_2_3_", traffic_2_4_, function() rexp(1, lambda[2]-lambda[1])) %>%
+  add_generator("traffic_3_4_", traffic_3_4_, function() rexp(1, lambda[3]-lambda[1])) %>%
+  add_generator("traffic_4_5_", traffic_4_5_, function() rexp(1, lambda[4]-lambda[1]))
+
+
+env %>% #env execution
+  run(0.1) 
+
+#########################delay results processing for node
+all_arrivals_res <- data.frame(env %>%
+                                 get_mon_arrivals(per_resource = TRUE) %>%
+                                 transform(waiting_time_in_queue = round(end_time - start_time - activity_time)) %>%
+                                 transform(spending_time = end_time - start_time))
+
+for (node in 1:3){
+  traffic <- dplyr::filter(all_arrivals_res, paste0("node_", node) == all_arrivals_res$resource)
+  print(paste("Node - ", node, ":"))
+  print(paste("simmer E(T) =", mean(traffic$spending_time), "s"))
+  
+  
+}
+
+
+all_arrivals_res <- data.frame(env %>%
+                                 get_mon_arrivals(per_resource = FALSE) %>%
+                                 transform(waiting_time_in_queue = round(end_time - start_time - activity_time)) %>%
+                                 transform(spending_time = end_time - start_time))
+
+traffic <- dplyr::filter(all_arrivals_res, grepl("traffic_1_5_", all_arrivals_res$name))
+
+print(mean(traffic$spending_time))
+
+delay_sim_mm1 <- traffic$spending_time
+```
+
+
+```{r}
+print(mean(traffic$spending_time))
+
+delay_sim_mm1 <- traffic$spending_time
+```
+
+```{r}
+rate = (1 - Load)/E_x
+t = seq(0, 4e-5, 1e-8)
+
+pdf_result_4_links <- calculate_pdf_result(rate, t, 4)
+pdf_link1 = rate[1] * exp(-rate[1] * t)
+pdf_link2 = rate[2] * exp(-rate[2] * t)
+pdf_link3 = rate[3] * exp(-rate[3] * t)
+pdf_link4 = rate[4] * exp(-rate[4] * t)
+
+# Set up a single plot with x-axis limits
+plot(t, pdf_link1, type = "l", col = rgb(1, 0, 0, 0.5), lty = 2, lwd = 2,
+     xlab = "Time", ylab = "Probability Density Function",
+     main = "PDF of Links and Simulated Delays")
+
+lines(t, pdf_link2, col = rgb(0, 1, 0, 0.5), lty = 2, lwd = 2)
+lines(t, pdf_link3, col = rgb(0, 0, 1, 0.5), lty = 3, lwd = 2)
+lines(t, pdf_link4, col = rgb(1, 0, 0, 0.5), lty = 3, lwd = 2)
+
+lines(t, pdf_result_4_links, col = rgb(0.5, 0, 0.5, 0.5), lty = 1, lwd = 3)
+
+# Plot histogram of simulated delays with less bandwidth and transparency
+hist(delay_sim_mm1, prob = TRUE, col = rgb(1, 0.5, 0, 0.5), add = TRUE, breaks = 40, border = "white")
+
+# Add legends for each component
+legend("topright", legend=c("Link 1", "Link 2", "Link 3","Link 4", "End-to-End System", "Simulated Delays"),
+       col=c(rgb(1, 0, 0, 0.5), rgb(0, 1, 0, 0.5), rgb(0, 0, 1, 0.5),rgb(1, 0, 0, 0.5), rgb(0.5, 0, 0.5, 0.5), "orange"),
+       lty=c(2, 2, 3, 3, 1,  1), lwd=c(2, 2, 2, 2, 3, 20), inset = c(0.01, 0.01), xpd = TRUE)
+
+# Reset to a single plot
+par(mfrow=c(1, 1))
+```
+
