@@ -1,5 +1,5 @@
 
-This repository contains R Markdown code for simulating and analyzing a system with hypoexponential distribution across three links, as well as functions for calculating delays for a any number of links. The simulation is conducted using the _simmer_ package, and theoretical calculations are performed using _igraph_ and _EnvStats_.
+This repository contains R Markdown code for simulating and analyzing a system with hypoexponential distribution across three links, as well as functions for calculating delays for a any number of links. The simulation is conducted using the **_simmer_** package, and theoretical calculations are performed using **_igraph_** and **_EnvStats_**.
 
 # Hypoexponential Distribution
 
@@ -44,7 +44,7 @@ This section uses the igraph package to perform theoretical calculations and vis
 ### Simulation and Delay Comparison
 The code calculates both theoretical and simulated delays for the three links to compare the results using library **simmer**.
 
-## n-Number of Links Functions and Calculation Example
+## n-Number of Links and Calculation Example
 This section contains functions for calculating the theoretical and simulated delays for a system with a variable number of links (**n**).
 
 ## Installation and Setup
